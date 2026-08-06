@@ -1,0 +1,30 @@
+{
+  "name": "ai-chat-navigator",
+  "description": "AI Chat Navigator — a lightweight Chrome extension adding a floating Prompt Timeline, Prompt Finder, Important markers, local Favorites, and AI Response Highlight to ChatGPT (v0.7).",
+  "private": true,
+  "version": "0.7.29",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:v1": "node scripts/build-mv3-v1.mjs",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "compile": "tsc --noEmit",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "ai-chat-navigator": "file:../ai-chat-navigator",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@wxt-dev/module-react": "^1.1.5",
+    "typescript": "^5.9.3",
+    "wxt": "^0.20.26"
+  }
+}
