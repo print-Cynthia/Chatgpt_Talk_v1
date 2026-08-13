@@ -150,40 +150,46 @@ export function getConversationDocument(): Document {
 // contains the most [data-turn] nodes.
 export function getConversationScroller(doc: Document): HTMLElement {
   const turns = Array.from(doc.querySelectorAll<HTMLElement>('[data-turn]'));
-  let best: HTMLElement | null = null;
-  let bestCount = 0;
 
-  const consider = (el: HTMLElement | null) => {
-    if (!el) {
-      return;
-    }
+  if (turns.length === 0) {
+    return (doc.scrollingElement as HTMLElement) ?? doc.documentElement;
+  }
 
-    let node: HTMLElement | null = el;
-
-    while (node && node !== doc.body) {
-      const style = doc.defaultView?.getComputedStyle(node);
-      const canScroll =
-        !!style &&
-        (style.overflowY === 'auto' ||
-          style.overflowY === 'scroll' ||
-          node.scrollHeight > node.clientHeight + 4);
-
-      if (canScroll) {
-        const contained = turns.filter((t) => node!.contains(t)).length;
-
-        if (contained > bestCount) {
-          bestCount = contained;
-          best = node;
-        }
-      }
-
-      node = node.parentElement;
-    }
+  // Score every scrollable ancestor of every rendered turn. The REAL
+  // conversation scroller contains the most turns; inner wrappers contain
+  // only a few. Picking the highest-scoring one is robust across ChatGPT's
+  // nested scroll layouts and matches what makes the timeline jump work.
+  // MUST use AND (overflowY matches AND real overflow) so we never climb onto
+  // a giant outer wrapper that has overflow but is not the real viewport
+  // scroller (that was the v0.7.35 bug: scrollerClientHeight 467228).
+  const isScrollable = (node: HTMLElement): boolean => {
+    const style = doc.defaultView?.getComputedStyle(node);
+    return (
+      !!style &&
+      /(auto|scroll|overlay)/.test(style.overflowY) &&
+      node.scrollHeight > node.clientHeight + 2
+    );
   };
 
-  consider(doc.querySelector('main'));
-  consider(doc.querySelector('[role="presentation"]'));
-  consider(turns[0]?.parentElement ?? null);
+  const score = new Map<HTMLElement, number>();
+  for (const turn of turns) {
+    let node: HTMLElement | null = turn.parentElement;
+    while (node && node !== doc.body) {
+      if (isScrollable(node)) {
+        score.set(node, (score.get(node) ?? 0) + 1);
+      }
+      node = node.parentElement;
+    }
+  }
+
+  let best: HTMLElement | null = null;
+  let bestScore = -1;
+  for (const [el, s] of score) {
+    if (s > bestScore) {
+      bestScore = s;
+      best = el;
+    }
+  }
 
   return best ?? (doc.scrollingElement as HTMLElement) ?? doc.documentElement;
 }

@@ -56,6 +56,12 @@ const CONTEXT_NOISE_TOKENS = [
 // sentence — this is the main source of "noise" complaints.
 const SENTENCE_END = /[。！？\.!\n]/;
 
+// Patterns that indicate cross-boundary leakage: the context fragment bled
+// into a different block / turn / UI element and produced disjoint garbage
+// like "...step, AI summary etc." or "stage..." with no real prose connection
+// to the highlighted text.
+const DISJOINT_PATTERN = /^(…|\.\.\.)[^\s]{0,2}[^\u4e00-\u9fa5A-Z]|[^a-zA-Z\u4e00-\u9fa5]$/;
+
 function sanitizeContext(value: string): string {
   let out = value;
 
@@ -75,6 +81,14 @@ function sanitizeContext(value: string): string {
   const dotIdx = out.search(SENTENCE_END);
   if (dotIdx > 0) {
     out = out.slice(0, dotIdx + 1);
+  }
+
+  // Detect disjoint fragments: if the context starts with an ellipsis but the
+  // character after it is NOT a CJK ideograph or Latin letter (e.g. it's a
+  // symbol, digit, or punctuation), or the fragment ends without any prose
+  // character, it is almost certainly cross-boundary leakage — suppress it.
+  if (DISJOINT_PATTERN.test(out) || out.length <= 1) {
+    return '';
   }
 
   // Collapse multiple whitespace runs that result from stripping.

@@ -9,6 +9,7 @@ import {
   runDriftCheck,
   closestFallback,
   getConversationDocument,
+  getConversationScroller,
 } from '../services/chatgptSelectors';
 import {
   addPromptFavorite,
@@ -37,6 +38,7 @@ import {
 import {
   applyHighlightsForConversation,
   computeOffsets,
+  extractTurnNumberFromElement,
   findAssistantRootByText,
   findHighlightTarget,
   getAssistantMessageRoot,
@@ -46,7 +48,7 @@ import {
   getMessageId,
   removeHighlightMark,
   restoreHighlight,
-  triggerLoadTargetTurn,
+  scrollConversationBy,
   wrapRange,
 } from '../services/highlightRange';
 import { SELECTION_PING_EVENT } from '../services/selectionBridge';
@@ -83,7 +85,7 @@ const LEGACY_STYLE_ID = 'ai-chat-navigator-page-highlight-style';
 const HIGHLIGHT_CLASS_NAME = 'ai-chat-navigator-soft-glow';
 const SCROLL_TARGET_CLASS_NAME = 'ai-chat-navigator-scroll-target';
 
-const JUMP_CORRECTION_DELAYS = [60, 180, 360, 700, 1100, 1600];
+const JUMP_CORRECTION_DELAYS = [50, 160, 380, 800];
 const ACTIVE_LOCK_AFTER_JUMP_MS = 1900;
 const PREVIEW_DISMISS_DELAY_MS = 550;
 
@@ -1117,15 +1119,65 @@ export function Sidebar() {
       const { startOffset, endOffset } = computeOffsets(range, assistantRoot);
       const text = range.toString();
 
+      // Capture the stable conversation-turn-N number as a reliable jump
+      // anchor. data-turn-id (UUID) can change on re-render/refresh and the
+      // literal text can mismatch formatted replies, but this positional
+      // number never changes for a given message in a conversation.
+      const turnNumber = (() => {
+        let ancestor: Element | null = assistantRoot;
+        while (ancestor) {
+          const m = ancestor
+            .getAttribute('data-testid')
+            ?.match(/conversation-turn-(\d+)/);
+          if (m) {
+            return parseInt(m[1], 10);
+          }
+          ancestor = ancestor.parentElement;
+        }
+        return undefined;
+      })();
+
       // Narrow context collection to the actual message prose container,
       // excluding header/footer UI chrome (model name, action buttons, etc.).
       // Try multiple selectors because ChatGPT changes class names frequently.
-      const contentRoot =
+      //
+      // IMPORTANT: we deliberately avoid falling back to `assistantRoot` (the
+      // whole <section data-turn="assistant">) because it contains sr-only
+      // labels, action toolbars, model badges and sometimes text from adjacent
+      // turns — all of which pollute the gray context preview with garbage
+      // like "...AI summary etc." fragments (issue #1).
+      //
+      // If no dedicated content node is found, we narrow to the block-level
+      // element that actually contains the selection (<p>, <pre>, <div>, …).
+      // This keeps context inside the same paragraph/block as the highlighted
+      // text and eliminates cross-boundary leakage.
+      let contentRoot: Element | null =
         assistantRoot.querySelector('[data-testid="message-content"]') ||
         assistantRoot.querySelector('[data-custom-highlighting-behavior="boundary"]') ||
         assistantRoot.querySelector('.markdown') ||
-        assistantRoot.querySelector('[class*="markdown"]') ||
-        assistantRoot;
+        assistantRoot.querySelector('[class*="whitespace-pre-wrap"]');
+
+      if (!contentRoot && range.startContainer) {
+        // Walk up from the selection to the nearest block-level ancestor
+        // that still lives inside assistantRoot.
+        let walk: Node | null = range.startContainer;
+        while (walk && walk !== assistantRoot) {
+          if (walk.nodeType === Node.ELEMENT_NODE) {
+            const tag = (walk as Element).tagName.toLowerCase();
+            if (
+              ['p', 'pre', 'li', 'div', 'blockquote', 'article', 'section'].includes(tag)
+            ) {
+              contentRoot = walk as Element;
+              break;
+            }
+          }
+          walk = walk.parentNode;
+        }
+      }
+
+      if (!contentRoot) {
+        contentRoot = assistantRoot;
+      }
       const { before, after } = getContextAround(
         assistantRoot,
         startOffset,
@@ -1136,6 +1188,7 @@ export function Sidebar() {
         id: createHighlightId(),
         conversationId: conversation.conversationId,
         messageId,
+        turnNumber,
         startOffset,
         endOffset,
         text,
@@ -1274,9 +1327,40 @@ export function Sidebar() {
 
   const handleJumpToHighlight = useCallback(
     (id: string) => {
-      console.log('[AI Chat Navigator][diag] jump-click', { id });
+    console.log('[AI Chat Navigator][diag] jump-click', { id });
 
-      const highlight = highlightsRef.current.find((item) => item.id === id);
+    // Resolve the turn number of the conversation-turn element closest to the
+    // viewport CENTER. This is the ground-truth "where am I" signal used to
+    // steer the long-distance highlight jump far more reliably than the global
+    // min/max turn bounds, which include always-mounted head/tail buffers and
+    // gaps and wrongly report an un-mounted target as "in range".
+    const getViewportCenterTurn = (
+      probeDoc: Document,
+      probeScroller: HTMLElement,
+    ): number | null => {
+      const turns = Array.from(
+        probeDoc.querySelectorAll<HTMLElement>('[data-testid^="conversation-turn"]'),
+      );
+      if (!turns.length) return null;
+      const rect = probeScroller.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      let best: HTMLElement | null = null;
+      let bestDist = Infinity;
+      for (const el of turns) {
+        const r = el.getBoundingClientRect();
+        const elCenter = r.top + r.height / 2;
+        const d = Math.abs(elCenter - centerY);
+        if (d < bestDist) {
+          bestDist = d;
+          best = el;
+        }
+      }
+      if (!best) return null;
+      const m = best.getAttribute('data-testid')?.match(/conversation-turn-(\d+)/);
+      return m ? parseInt(m[1], 10) : null;
+    };
+
+    const highlight = highlightsRef.current.find((item) => item.id === id);
 
       if (!highlight) {
         showToast('未找到高亮');
@@ -1299,6 +1383,21 @@ export function Sidebar() {
       });
 
       if (target) {
+        // REPAIR (v0.7.34): persist missing turnNumber for old highlights.
+        if (typeof highlight.turnNumber !== 'number') {
+          const repaired = extractTurnNumberFromElement(target);
+          if (repaired !== null) {
+            highlight.turnNumber = repaired;
+            updateHighlight(highlight.conversationId, highlight.id, {
+              turnNumber: repaired,
+            }).catch(() => {});
+            console.log('[AI Chat Navigator][diag] jump-repair', {
+              id,
+              turnNumber: repaired,
+            });
+          }
+        }
+
         // Use the same scrolling helper as the timeline/favorites jumps — it
         // correctly resolves ChatGPT's nested scroll container and centers the
         // target in the viewport.
@@ -1321,96 +1420,278 @@ export function Sidebar() {
       }
 
       // The turn is outside the currently-rendered window (ChatGPT uses
-      // virtual scrolling for long conversations). Progressively scroll toward
-      // the turn to trigger loading of older/newer messages.
+      // virtual scrolling for long conversations). We need to scroll the real
+      // conversation container so ChatGPT lazily loads the target turn, then
+      // re-locate it.
       //
-      // IMPORTANT: messageId is usually a UUID (data-turn-id), NOT
-      // conversation-turn-N, so we cannot parse turn number from it.
-      // resolveTargetTurnNumber falls back to searching visible DOM for an
-      // assistant section that contains the highlight text, then reads the
-      // turn number from its ancestor's data-testid.
+      // KEY FIX (v0.7.32): the previous strategy jumped to the absolute
+      // top/bottom edge and reversed direction when it got "stuck". That
+      // skipped the MIDDLE of the conversation — a highlight created in turn 50
+      // of a 200-turn chat could never be reached because we'd oscillate
+      // between the two edges. The new strategy scrolls ONE WINDOW at a time
+      // (never jumping to a far edge) and sweeps across the whole conversation
+      // if the target position is unknown, so it passes through every turn.
 
-      const computeDirection = (
-        probeDoc: Document,
-        probeTargetN: number | null,
-      ): 'top' | 'bottom' => {
-        if (probeTargetN === null) {
-          return 'top';
+      let targetN = resolveTargetTurnNumber(highlight, doc);
+
+      // Which way to sweep first. If we already know the target's turn number,
+      // steer by it (handled in the loop). Otherwise guess from the current
+      // scroll position: if the user is near the bottom, older content is
+      // probably above us (the common "highlight early, jump from recent" case).
+      const initialSweepDown = (() => {
+        if (targetN !== null) return false;
+        try {
+          const scroller = getConversationScroller(doc);
+          const ratio =
+            scroller.scrollTop /
+            Math.max(1, scroller.scrollHeight - scroller.clientHeight);
+          return ratio <= 0.5; // near top -> sweep down for newer content
+        } catch {
+          return false; // default: sweep up (load older) first
         }
+      })();
 
+      let staleTicks = 0;
+      let ticks = 0;
+      let lastScrollTop = -1;
+      const MAX_TICKS = 140;
+
+      const readTurnBounds = (probeDoc: Document) => {
         const nums = Array.from(
           probeDoc.querySelectorAll('[data-testid^="conversation-turn"]'),
         )
           .map((el) => {
-            const m = el.getAttribute('data-testid')?.match(/conversation-turn-(\d+)/);
+            const m = el
+              .getAttribute('data-testid')
+              ?.match(/conversation-turn-(\d+)/);
             return m ? parseInt(m[1], 10) : null;
           })
           .filter((n): n is number => n !== null);
-
-        if (nums.length === 0) {
-          return 'top';
-        }
-
-        return probeTargetN < Math.min(...nums) ? 'top' : 'bottom';
+        return {
+          min: nums.length ? Math.min(...nums) : null,
+          max: nums.length ? Math.max(...nums) : null,
+        };
       };
 
-      let targetN = resolveTargetTurnNumber(highlight, doc);
-      let direction = computeDirection(doc, targetN);
-
-      console.log('[AI Chat Navigator][diag] jump-direction', {
+      console.log('[AI Chat Navigator][diag] jump-sweep-start', {
         id,
         messageId: highlight.messageId,
         targetN,
-        direction,
-        reason: targetN === null ? 'uuid-fallback-search' : 'parsed-from-messageId',
+        initialSweepDown,
       });
 
-      triggerLoadTargetTurn(highlight, doc, direction);
-
-      let attempts = 0;
-      let reversed = false;
-
       const timer = window.setInterval(() => {
-        attempts += 1;
-        const retryDoc = getConversationDocument();
-        const retryTarget = findHighlightTarget(highlight, retryDoc);
+        ticks += 1;
+        const rdoc = getConversationDocument();
+        const retryTarget = findHighlightTarget(highlight, rdoc);
+        const turnEl =
+          targetN !== null
+            ? rdoc.querySelector<HTMLElement>(
+                `[data-testid="conversation-turn-${targetN}"]`,
+              )
+            : null;
 
-        if (retryTarget) {
+        if (retryTarget || turnEl) {
           window.clearInterval(timer);
-          scrollElementToContainerCenter(retryTarget);
 
+          const finalTarget = retryTarget ?? turnEl;
+          if (typeof highlight.turnNumber !== 'number') {
+            const repaired = extractTurnNumberFromElement(finalTarget);
+            if (repaired !== null) {
+              highlight.turnNumber = repaired;
+              updateHighlight(highlight.conversationId, highlight.id, {
+                turnNumber: repaired,
+              }).catch(() => {});
+              console.log('[AI Chat Navigator][diag] jump-repair', {
+                id,
+                turnNumber: repaired,
+              });
+            }
+          }
+
+          // Center immediately (timeline-style single instant scroll), then
+          // re-center on a short delay so we land exactly on the wrapped
+          // highlight span once ChatGPT finishes rendering/applying it. This
+          // mirrors the immediate-jump path and the timeline node click, and
+          // is what removes the "last bit I had to scroll by hand" gap.
+          scrollElementToContainerCenter(finalTarget);
+          let settled = false;
+          // Add one longer tail delay so an asynchronously-applied highlight
+          // span has time to appear. We do NOT modify JUMP_CORRECTION_DELAYS
+          // because the timeline path also uses it (its target is already in
+          // the DOM, so the extra delay is harmless there).
+          const correctionDelays = [...JUMP_CORRECTION_DELAYS, 1400];
+          correctionDelays.forEach((delay) => {
+            window.setTimeout(() => {
+              const retryTarget2 = findHighlightTarget(
+                highlight,
+                getConversationDocument(),
+              );
+              const turnEl2 =
+                targetN !== null
+                  ? getConversationDocument().querySelector<HTMLElement>(
+                      `[data-testid="conversation-turn-${targetN}"]`,
+                    )
+                  : null;
+              if (settled) return;
+              // The span is only present after ChatGPT applies the highlight
+              // (async, after the turn mounts). findHighlightTarget falls back
+              // to the whole turn section when the span is missing, so we must
+              // check for the exact span before declaring victory - otherwise
+              // we center the whole turn and stop short of the real highlight.
+              const isSpan =
+                !!retryTarget2 &&
+                retryTarget2.getAttribute('data-highlight-id') === highlight.id;
+              const t = isSpan ? retryTarget2 : (turnEl2 ?? finalTarget);
+              scrollElementToContainerCenter(t);
+              if (isSpan) settled = true;
+            }, delay);
+          });
           return;
         }
 
-        // Re-resolve targetN on each tick — as new turns load into the DOM,
-        // our text-search fallback may find a match that was invisible before.
-        if (attempts % 3 === 0 && targetN === null) {
-          const freshN = resolveTargetTurnNumber(highlight, retryDoc);
+        if (targetN === null) {
+          const freshN = resolveTargetTurnNumber(highlight, rdoc);
           if (freshN !== null) {
             targetN = freshN;
-            direction = computeDirection(retryDoc, targetN);
+            if (typeof highlight.turnNumber !== 'number') {
+              highlight.turnNumber = freshN;
+              updateHighlight(highlight.conversationId, highlight.id, {
+                turnNumber: freshN,
+              }).catch(() => {});
+            }
             console.log('[AI Chat Navigator][diag] jump-resolved', {
-              attempts,
+              ticks,
               targetN,
-              direction,
             });
           }
         }
 
-        // Keep scrolling in the chosen direction to load more content.
-        triggerLoadTargetTurn(highlight, retryDoc, direction);
+        const bounds = readTurnBounds(rdoc);
+        const scroller = (() => {
+          try {
+            return getConversationScroller(rdoc);
+          } catch {
+            return null;
+          }
+        })();
 
-        // If still not found after several attempts, try the opposite edge.
-        if (!reversed && attempts >= 8) {
-          reversed = true;
-          direction = direction === 'top' ? 'bottom' : 'top';
+        if (!scroller || bounds.min === null || bounds.max === null) {
+          if (ticks >= MAX_TICKS) {
+            window.clearInterval(timer);
+            console.log('[AI Chat Navigator][diag] jump-failed', {
+              id,
+              messageId: highlight.messageId,
+              turnNumber: highlight.turnNumber ?? null,
+              targetN,
+              loadedMin: bounds.min,
+              loadedMax: bounds.max,
+            });
+            showToast('未找到原回复，该对话可能已过长或已刷新');
+          }
+          return;
         }
 
-        if (attempts >= 20) {
+        const liveMax = Math.max(
+          1,
+          scroller.scrollHeight - scroller.clientHeight,
+        );
+
+        // Steer by the turn number nearest the VIEWPORT CENTER (ground truth),
+        // NOT by the global min/max bounds. Global bounds include always-
+        // mounted head/tail buffers and gaps, so they wrongly report the
+        // target "in range" and made v0.7.38 jiggle in place then bail as
+        // "driver dead" (diag showed rendered 11-286 but turn 208 un-mounted).
+        const curN = getViewportCenterTurn(rdoc, scroller);
+        let dirSign: -1 | 1;
+        if (curN !== null) {
+          if (curN < targetN) dirSign = 1; // target below viewport -> scroll down
+          else if (curN > targetN) dirSign = -1; // target above -> scroll up
+          else dirSign = 1; // right spot but not mounted yet; nudge down
+        } else {
+          // No visible turn (rare) -> fall back to the ratio estimate.
+          const estTotal = Math.max(bounds.max ?? targetN, targetN, 1);
+          const est = (targetN / estTotal) * liveMax;
+          dirSign = est > scroller.scrollTop ? 1 : -1;
+        }
+
+        // Exponential approach: each tick jump a large fraction of the
+        // estimated pixel gap so a far-away turn loads in ~log time. The
+        // timeline jump is instant only because its target is already in the
+        // DOM; here we must first load it, so we make the load phase fast
+        // while still steering by the viewport-center turn (ground truth).
+        const estTotal = Math.max(bounds.max ?? targetN, targetN, 1);
+        const avgTurnPx = liveMax / estTotal;
+
+        let step: number;
+        if (ticks === 1 && curN === null) {
+          const est = Math.round((targetN / estTotal) * liveMax);
+          step = est - scroller.scrollTop;
+        } else if (curN !== null) {
+          const turnGap = Math.abs(curN - targetN);
+          const desired = turnGap * avgTurnPx * 0.72; // ~72% of the gap per tick
+          step = dirSign * Math.max(450, Math.min(desired, 60000));
+        } else {
+          const est = Math.round((targetN / estTotal) * liveMax);
+          const rem = est - scroller.scrollTop;
+          step =
+            Math.sign(rem) * Math.max(450, Math.min(Math.abs(rem) * 0.72, 60000));
+        }
+        scrollConversationBy(rdoc, step);
+
+        // Real stall detection: bail ONLY if scrollTop truly stops moving (the
+        // driver is dead). An unchanged bounds string is NOT a stall.
+        if (Math.abs(scroller.scrollTop - lastScrollTop) < 2) {
+          staleTicks += 1;
+        } else {
+          staleTicks = 0;
+        }
+        lastScrollTop = scroller.scrollTop;
+
+        if (staleTicks === 4) {
+          try {
+            if (dirSign === -1) window.scrollTo(0, 0);
+            else window.scrollTo(0, 1e9);
+          } catch {
+            /* noop */
+          }
+        } else if (staleTicks >= 12) {
           window.clearInterval(timer);
-          showToast('未找到原回复');
+          console.log('[AI Chat Navigator][diag] jump-driver-dead', {
+            id,
+            turnNumber: highlight.turnNumber ?? null,
+            targetN,
+            rendered: `${bounds.min}-${bounds.max}`,
+            scrollerTag: scroller.tagName,
+            scrollerScrollTop: scroller.scrollTop,
+            scrollerScrollHeight: scroller.scrollHeight,
+            viewportCenterTurn: curN,
+          });
+          showToast('未找到原回复，该对话可能已过长或已刷新');
+          return;
         }
-      }, 350);
+
+        if (ticks >= MAX_TICKS) {
+          window.clearInterval(timer);
+          console.log('[AI Chat Navigator][diag] jump-failed', {
+            id,
+            messageId: highlight.messageId,
+            turnNumber: highlight.turnNumber ?? null,
+            targetN,
+            loadedMin: bounds.min,
+            loadedMax: bounds.max,
+            scrollerTag: scroller.tagName,
+            scrollerScrollable:
+              scroller.scrollHeight > scroller.clientHeight + 2,
+            scrollerScrollTop: scroller.scrollTop,
+            scrollerScrollHeight: scroller.scrollHeight,
+            scrollerClientHeight: scroller.clientHeight,
+            viewportCenterTurn: curN,
+          });
+          showToast('未找到原回复，该对话可能已过长或已刷新');
+        }
+      }, 55);
+
     },
     [showToast],
   );

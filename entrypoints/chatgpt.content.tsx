@@ -23,6 +23,18 @@ const ERROR_OVERLAY_ID = 'ai-chat-navigator-error-overlay';
 
 function showFatalOverlay(error: unknown) {
   try {
+    // Ignore benign browser-level warnings that are not plugin faults. Chrome
+    // fires a "ResizeObserver loop completed with undelivered notifications"
+    // error event on layout shifts (e.g. switching to voice mode, our own
+    // React re-renders). It does not break anything, so surfacing it as a
+    // fatal red bar is misleading noise.
+    const rawMessage =
+      error instanceof Error ? error.message : String(error);
+
+    if (rawMessage.includes('ResizeObserver loop completed')) {
+      return;
+    }
+
     const doc = document;
     if (!doc.body) {
       return;

@@ -20,6 +20,13 @@ export interface ResponseHighlight {
   id: string;
   conversationId: string;
   messageId: string;
+  // Stable positional anchor: the conversation-turn-N number of the message
+  // the highlight was created on. Unlike data-turn-id (a UUID that ChatGPT
+  // can regenerate on re-render/refresh) and the literal text (which can
+  // mismatch richly-formatted replies), this number is fixed for a message
+  // within a conversation. Used as the primary, most reliable jump anchor.
+  // Optional for backward compatibility with highlights created before v0.7.33.
+  turnNumber?: number;
   startOffset: number;
   endOffset: number;
   text: string;
@@ -160,7 +167,7 @@ export async function updateHighlight(
   conversationId: string,
   id: string,
   patch: Partial<
-    Pick<ResponseHighlight, 'color' | 'style' | 'note' | 'tags'>
+    Pick<ResponseHighlight, 'color' | 'style' | 'note' | 'tags' | 'turnNumber'>
   >,
 ) {
   const store = await loadStore();
@@ -178,6 +185,7 @@ export async function updateHighlight(
       ...(patch.style ? { style: patch.style } : null),
       ...(patch.note !== undefined ? { note: patch.note } : null),
       ...(patch.tags ? { tags: normalizeTags(patch.tags) } : null),
+      ...(typeof patch.turnNumber === 'number' ? { turnNumber: patch.turnNumber } : null),
     };
   });
 

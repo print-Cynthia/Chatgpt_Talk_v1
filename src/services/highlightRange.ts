@@ -326,7 +326,7 @@ export function getContextAround(
   startOffset: number,
   endOffset: number,
   contentRoot?: Element | null,
-  radius = 25,
+  radius = 18,
 ): { before: string; after: string } {
   const walkRoot = contentRoot ?? root;
   const rawBefore = getVisibleTextInRange(
@@ -344,10 +344,56 @@ export function getContextAround(
     return idx > 0 ? s.slice(0, idx + 1) : s;
   };
 
-  return {
-    before: truncateAtSentence(rawBefore),
-    after: truncateAtSentence(rawAfter),
+  // Also truncate at word boundaries when sentence truncation didn't fire or
+  // the fragment still starts/ends mid-word (a strong signal of cross-block
+  // leakage where context bled into an adjacent paragraph or UI element).
+  const truncateAtWordBoundary = (s: string, fromStart: boolean): string => {
+    if (s.length <= 4) return s;
+    if (fromStart) {
+      // For contextBefore: strip trailing mid-word tail.
+      const lastSpace = s.lastIndexOf(' ');
+      const lastCjkBreak = s.search(/[\u3000\u3001\u3002\uff0c\uff01\uff1a\n]|\s+[^\s]*$/);
+      if (lastCjkBreak > 0 && lastCjkBreak < s.length - 1) {
+        return s.slice(0, lastCjkBreak + 1).trimEnd();
+      }
+      if (lastSpace > s.length * 0.6) {
+        return s.slice(0, lastSpace).trimEnd();
+      }
+    } else {
+      // For contextAfter: strip leading mid-word head.
+      const firstSpace = s.indexOf(' ');
+      const firstCjkBreak = s.search(/[^\s]*[\u3000\u3001\u3002\uff0c\uff01\uff1a\s]/);
+      if (firstCjkBreak > 0 && firstCjkBreak < s.length * 0.4) {
+        return s.slice(firstCjkBreak + 1).trimStart();
+      }
+      if (firstSpace > 0 && firstSpace < s.length * 0.4) {
+        return s.slice(firstSpace + 1).trimStart();
+      }
+    }
+    return s;
   };
+
+  // Hard cap: context longer than ~60 chars almost always means we picked up
+  // content from a different block / turn / UI chrome region.
+  const MAX_CONTEXT_LEN = 60;
+
+  let before = rawBefore;
+  let after = rawAfter;
+
+  before = truncateAtSentence(before);
+  after = truncateAtSentence(after);
+
+  before = truncateAtWordBoundary(before, true);
+  after = truncateAtWordBoundary(after, false);
+
+  if (before.length > MAX_CONTEXT_LEN) {
+    before = before.slice(0, MAX_CONTEXT_LEN);
+  }
+  if (after.length > MAX_CONTEXT_LEN) {
+    after = after.slice(0, MAX_CONTEXT_LEN);
+  }
+
+  return { before, after };
 }
 
 function createHighlightMark(
@@ -525,6 +571,17 @@ function findAssistantRootById(
   return null;
 }
 
+// Normalize text for comparison: strip leading/trailing whitespace, collapse
+// internal whitespace (spaces, tabs, newlines, zero-width chars) to single spaces.
+// This makes matching resilient against rich-text formatting differences between
+// what was selected at creation time and what textContent returns from the live DOM.
+function normalizeForMatch(raw: string): string {
+  return raw
+    .replace(/[\u200B-\u200F\uFEFF\u00AD]/g, '') // strip zero-width + soft hyphen
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function findAssistantRootByText(
   container: ParentNode,
   text: string,
@@ -533,10 +590,10 @@ export function findAssistantRootByText(
     return null;
   }
 
-  const needle = text.slice(0, 24);
+  const needle = normalizeForMatch(text.slice(0, 80)); // longer slice for better specificity
 
   for (const element of querySelectorAllFallback(container, 'assistantMessage')) {
-    if ((element.textContent || '').includes(needle)) {
+    if (normalizeForMatch(element.textContent || '').includes(needle)) {
       return element;
     }
   }
@@ -614,6 +671,75 @@ export function removeHighlightMark(id: string, doc: Document = document) {
   }
 }
 
+// Scroll the real conversation scroller by a RELATIVE delta (positive = down,
+// negative = up). Unlike `triggerLoadTargetTurn` (which jumps to an absolute
+// top/bottom edge), this moves only ~one viewport at a time so ChatGPT's
+// virtual list renders every intermediate window on the way.
+//
+// This is what makes "jump to a turn in the MIDDLE of a long conversation"
+// work: jumping straight to the far edge would skip the middle turns entirely.
+// Moving a window at a time guarantees we pass through the target's window.
+export function scrollConversationBy(doc: Document, deltaPx: number): boolean {
+  const scroller = getConversationScroller(doc);
+
+  const fire = (node: EventTarget) => {
+    try {
+      node.dispatchEvent(new Event('scroll', { bubbles: true }));
+    } catch {
+      /* noop */
+    }
+  };
+
+  const scrollOne = (target: HTMLElement): boolean => {
+    if (target.scrollHeight <= target.clientHeight + 4) {
+      return false;
+    }
+
+    const before = target.scrollTop;
+    target.scrollTop = Math.max(
+      0,
+      Math.min(target.scrollHeight, target.scrollTop + deltaPx),
+    );
+
+    fire(target);
+    fire(window);
+    fire(target.ownerDocument ?? document);
+
+    // A synthetic wheel event often wakes up intersection/sentinel loaders
+    // that ignore scroll events alone.
+    try {
+      target.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: deltaPx > 0 ? 120 : -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+
+    return true;
+  };
+
+  const moved = scrollOne(scroller);
+
+  if (!moved) {
+    const fallbackEl =
+      (doc.scrollingElement as HTMLElement | null) ?? doc.documentElement;
+    if (fallbackEl && fallbackEl !== scroller) {
+      scrollOne(fallbackEl);
+    }
+    try {
+      window.scrollBy(0, deltaPx);
+    } catch {
+      /* noop */
+    }
+  }
+
+  return moved;
+}
+
 // For long conversations ChatGPT only keeps a window of turns in the DOM. If
 // the stored messageId refers to a turn outside that window, scroll to the
 // corresponding edge to trigger loading older/newer messages.
@@ -672,21 +798,125 @@ export function triggerLoadTargetTurn(
     direction,
   });
 
-  if (direction === 'top') {
-    scroller.scrollTop = 0;
-  } else {
-    scroller.scrollTop = scroller.scrollHeight;
+  // Move the conversation scroller toward the target edge to trigger
+  // ChatGPT's lazy (virtual) loading of older/newer turns.
+  //
+  // ChatGPT virtualizes the conversation: only a window of turns is in the
+  // DOM, and "load older/newer" is triggered by reaching the top/bottom edge
+  // of the real scroll container. A naive `scrollTop = 0` is often ignored
+  // (no native scroll event fires, or the change is coalesced), so we:
+  //   1. step in small increments toward the edge (mimics a real scroll),
+  //   2. finish at the extreme edge to surface the load sentinel,
+  //   3. dispatch native `scroll` events on scroller + window + document,
+  //   4. fall back to documentElement/window scrolling if the chosen scroller
+  //      is not actually scrollable (getConversationScroller can miss the real
+  //      container on some ChatGPT layouts, e.g. when turns are mid-load).
+
+  const scrollOne = (target: HTMLElement): boolean => {
+    // Confirm this node really scrolls. If it doesn't, it's the wrong node and
+    // the caller must fall back.
+    if (target.scrollHeight <= target.clientHeight + 4) {
+      return false;
+    }
+
+    const stepSize = Math.max(200, (target.clientHeight || 600) * 0.8);
+
+    for (let i = 0; i < 6; i += 1) {
+      if (direction === 'top') {
+        target.scrollTop = Math.max(0, target.scrollTop - stepSize);
+      } else {
+        target.scrollTop = Math.min(target.scrollHeight, target.scrollTop + stepSize);
+      }
+    }
+
+    // Hard land at the extreme edge to trigger the "load more" sentinel.
+    target.scrollTop = direction === 'top' ? 0 : target.scrollHeight;
+
+    // Notify scroll listeners — a programmatic scrollTop change does not
+    // always dispatch them, so fire on scroller, window and document.
+    const fire = (node: EventTarget) => {
+      try {
+        node.dispatchEvent(new Event('scroll', { bubbles: true }));
+      } catch {
+        /* noop */
+      }
+    };
+    fire(target);
+    fire(window);
+    fire(target.ownerDocument ?? document);
+
+    // Backup: a synthetic wheel event often wakes up intersection/sentinel
+    // loaders that ignore scroll events alone.
+    try {
+      target.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: direction === 'top' ? -120 : 120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+
+    return true;
+  };
+
+  // First attempt on the detected scroller.
+  const moved = scrollOne(scroller);
+
+  // If the chosen scroller is not actually scrollable, fall back to the
+  // document scrolling element and a window scroll. One of these usually is
+  // the real container on layouts where getConversationScroller missed.
+  if (!moved) {
+    const fallbackEl =
+      (doc.scrollingElement as HTMLElement | null) ?? doc.documentElement;
+    if (fallbackEl && fallbackEl !== scroller) {
+      scrollOne(fallbackEl);
+    }
+    try {
+      window.scrollTo(0, direction === 'top' ? 0 : 1e9);
+    } catch {
+      /* noop */
+    }
   }
 
   return direction;
 }
 
+// Find the assistant section for a turn number by querying the stable
+// conversation-turn-N testid, then descending to the assistant reply.
+function findAssistantRootByTurnNumber(
+  container: ParentNode,
+  turnNumber: number,
+): HTMLElement | null {
+  const turn = container.querySelector<HTMLElement>(
+    `[data-testid="conversation-turn-${turnNumber}"]`,
+  );
+  if (!turn) {
+    return null;
+  }
+  return (
+    turn.querySelector<HTMLElement>('[data-turn="assistant"]') ??
+    querySelectorAllFallback(turn, 'assistantMessage')[0] ??
+    turn
+  );
+}
+
+// Throttle for the find-strategy2-miss diagnostic (see findHighlightTarget).
+let lastStrategy2MissAt = 0;
+
 // Find the best DOM target for a highlight jump. This mirrors the way the
-// timeline jump works: locate the turn (by data-testid), then the assistant
-// section inside it, then fall back to text match. We return the element so
-// the caller can scroll it with the same `scrollElementToContainerCenter`
+// timeline jump works: locate the turn (by data-turn-id or data-testid), then
+// the assistant section inside it, then fall back to text match. We return the
+// element so the caller can scroll it with the same `scrollElementToContainerCenter`
 // helper used by the timeline — that's been proven to work for both recent
 // and older turns.
+//
+// Strategy ordering matters: the stored turnNumber (conversation-turn-N) is the
+// MOST reliable anchor because it never changes for a message, so it comes
+// first. messageId is usually a UUID (data-turn-id) that can be regenerated on
+// re-render, and the literal text can mismatch richly-formatted replies.
 //
 // Returns null when the turn is not currently in the DOM (ChatGPT virtual-
 // scrolls long conversations). The caller can then use `triggerLoadTargetTurn`
@@ -704,9 +934,50 @@ export function findHighlightTarget(
     return span;
   }
 
-  // 2. Exact turn match. Highlights store the messageId we read from the
-  // assistant section; on modern ChatGPT that id is the data-testid of the
-  // outer conversation-turn-* section.
+  // 2. Stable turn-number match (conversation-turn-N). Most reliable anchor —
+  // added in v0.7.33. Works regardless of UUID regeneration or text drift.
+  if (typeof highlight.turnNumber === 'number') {
+    const byNum = findAssistantRootByTurnNumber(doc, highlight.turnNumber);
+    if (byNum) {
+      return byNum;
+    }
+    // DIAG (v0.7.35): if the turn element itself exists in the DOM but the
+    // inner assistant lookup failed, surface it — otherwise we can't tell
+    // "turn not loaded yet" from "selector mismatch". Throttled to ~1/2s so
+    // the 120-tick sweep doesn't flood the console.
+    const now = Date.now();
+    if (now - lastStrategy2MissAt > 2000) {
+      lastStrategy2MissAt = now;
+      console.log('[AI Chat Navigator][diag] find-strategy2-miss', {
+        id: highlight.id,
+        turnNumber: highlight.turnNumber,
+        turnExists: !!doc.querySelector(
+          `[data-testid="conversation-turn-${highlight.turnNumber}"]`,
+        ),
+        domTurnCount: doc.querySelectorAll('[data-testid^="conversation-turn"]')
+          .length,
+      });
+    }
+  }
+
+  // 3. UUID-based match via data-turn-id. On modern ChatGPT (2026-07+) the
+  // messageId stored at creation time is the data-turn-id UUID of the
+  // <section> that wraps the assistant reply.
+  let section = doc.querySelector<HTMLElement>(
+    `[data-turn-id="${highlight.messageId}"]`,
+  );
+
+  if (section) {
+    return (
+      section.querySelector<HTMLElement>('[data-turn="assistant"]') ??
+      querySelectorAllFallback(section, 'assistantMessage')[0] ??
+      section
+    );
+  }
+
+  // 4. Legacy data-testid match (conversation-turn-N format). Only matches
+  // highlights created on older ChatGPT versions where messageId was captured
+  // from data-testid instead of data-turn-id.
   const turn = doc.querySelector<HTMLElement>(
     `[data-testid="${highlight.messageId}"]`,
   );
@@ -719,35 +990,53 @@ export function findHighlightTarget(
     );
   }
 
-  // 3. Legacy id formats.
-  let section = doc.querySelector<HTMLElement>(
-    `[data-turn-id="${highlight.messageId}"], [data-message-id="${highlight.messageId}"]`,
+  // 5. Legacy data-message-id fallback.
+  section = doc.querySelector<HTMLElement>(
+    `[data-message-id="${highlight.messageId}"]`,
   );
 
   if (section) {
     return section;
   }
 
-  // 4. Full text match inside any assistant section.
+  // 6. Full text match inside any assistant section.
   section = findAssistantRootByText(doc, highlight.text);
 
   if (section) {
     return section;
   }
 
-  // 5. Broader fuzzy match using the first non-empty line of the stored text.
+  // 7. Broader fuzzy match using the first non-empty line of the stored text.
   if (highlight.text) {
-    const needle = highlight.text.split('\n').find((line) => line.trim())?.trim();
+    const rawNeedle = highlight.text.split('\n').find((line) => line.trim())?.trim();
 
-    if (needle && needle.length >= 2) {
+    if (rawNeedle && rawNeedle.length >= 2) {
+      const needle = normalizeForMatch(rawNeedle);
+
       for (const candidate of querySelectorAllFallback(doc.body, 'assistantMessage')) {
-        if ((candidate.textContent || '').includes(needle)) {
+        if (normalizeForMatch(candidate.textContent || '').includes(needle)) {
           return candidate;
         }
       }
     }
   }
 
+  return null;
+}
+
+// Extract the stable conversation-turn-N number from a found element's ancestor
+// chain. Used to "repair" old highlights that were created without turnNumber.
+export function extractTurnNumberFromElement(
+  el: Element,
+): number | null {
+  let node: Element | null = el;
+  while (node) {
+    const m = node
+      .getAttribute('data-testid')
+      ?.match(/conversation-turn-(\d+)/);
+    if (m) return parseInt(m[1], 10);
+    node = node.parentElement;
+  }
   return null;
 }
 
@@ -769,21 +1058,29 @@ export function scrollHighlightIntoView(
   return { scrolled: true, needsRetry: false };
 }
 
-// When stored messageId is a UUID (not conversation-turn-N), we cannot
-// determine scroll direction numerically. This fallback searches the current
-// DOM for any assistant section whose text contains the highlight text, then
-// reads the turn number from its ancestor's data-testid.
+// Resolve the target turn number for a highlight. Used by the jump loop to
+// steer the conversation scroller toward the right window.
+//
+// Order: stored turnNumber (most reliable, never changes for a message) first;
+// then a text-search fallback that reads the number from the enclosing
+// conversation-turn-* once the target turn becomes visible in the DOM.
 export function resolveTargetTurnNumber(
   highlight: ResponseHighlight,
   doc: Document = document,
 ): number | null {
-  // 1. Try parsing directly from messageId (handles future-proof storage).
+  // 1. Stored stable turn number (captured at creation since v0.7.33).
+  if (typeof highlight.turnNumber === 'number') {
+    return highlight.turnNumber;
+  }
+
+  // 2. Try parsing directly from messageId (legacy storage that stored a
+  // conversation-turn-N string instead of a UUID).
   const direct = (highlight.messageId ?? '').match(/conversation-turn-(\d+)/);
   if (direct) {
     return parseInt(direct[1], 10);
   }
 
-  // 2. Search visible assistant turns for one containing the highlight text.
+  // 3. Search visible assistant turns for one containing the highlight text.
   const needle = (highlight.text ?? '').slice(0, 24).trim();
   if (!needle) return null;
 
