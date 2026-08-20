@@ -1,5 +1,4 @@
 import type { PromptTimelineItem } from '../../services/chatgptPromptTimeline';
-import { UI_VERSION_LABEL } from '../../utils/version';
 import {
   previewCardBaseStyle,
   previewTextStyle,
@@ -7,7 +6,6 @@ import {
   attachmentRowStyle,
   attachmentChipStyle,
   previewActionsStyle,
-  previewVersionStyle,
   getPreviewActionStyle,
 } from './styles';
 import {
@@ -110,7 +108,6 @@ export function PreviewCard({
         >
           <StarIcon filled={Boolean(hoveredFavoriteId)} />
         </button>
-        <span style={previewVersionStyle}>{UI_VERSION_LABEL}</span>
       </div>
     </div>
   );

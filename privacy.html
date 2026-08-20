@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Chat Navigator — 隐私政策</title>
+    <style>
+      :root {
+        --ink: #0f172a;
+        --muted: #475569;
+        --line: #e2e8f0;
+        --surface: #f8fafc;
+        --accent: #050505;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--surface);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+        line-height: 1.7;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 48px 24px 80px;
+      }
+      h1 { font-size: 28px; margin: 0 0 4px; }
+      h2 {
+        font-size: 20px;
+        margin: 36px 0 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      h3 { font-size: 16px; margin: 22px 0 8px; }
+      p, li { color: var(--muted); font-size: 15px; }
+      code {
+        background: #eef2f7;
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--ink);
+      }
+      .badge {
+        display: inline-block;
+        margin-bottom: 18px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #ecfdf5;
+        color: #047857;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 20px 22px;
+        margin-top: 14px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th, td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th { color: var(--ink); font-weight: 600; }
+      footer {
+        margin-top: 48px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        font-size: 13px;
+        color: #94a3b8;
+      }
+      a { color: #2563eb; }
+      .updated { font-size: 13px; color: #94a3b8; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <span class="badge">本地优先 · 零上传</span>
+      <h1>AI Chat Navigator 隐私政策</h1>
+      <p class="updated">最后更新：2026-08-18</p>
+
+      <h2>1. 单一目的</h2>
+      <p>
+        AI Chat Navigator 是一款只服务于一个目的的浏览器扩展：<strong>帮助你在
+        ChatGPT 网页中导航、检索、整理你自己的对话</strong>。它提供提示词时间轴（点击跳转）、
+        查找/筛选、收藏、重要标记，以及对 AI 回复的就地高亮。它不提供、也不背后运行任何与分析、
+        广告、社交或数据收集相关的功能。
+      </p>
+
+      <h2>2. 我们收集什么 —— 什么都没有，全部留在本地</h2>
+      <p>
+        本扩展<strong>不向任何服务器发送、上传或同步任何数据</strong>。它不使用任何分析工具，
+        不与任何第三方共享数据，也没有远程代码。所有数据仅以
+        <code>chrome.storage.local</code> 的形式保存在<strong>你自己的浏览器</strong>中，
+        并仅包含<strong>你主动创建</strong>的内容：
+      </p>
+
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>数据类型</th>
+              <th>存储键</th>
+              <th>保存内容</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>AI 回复高亮</td>
+              <td><code>aiChatNavigatorResponseHighlightsV1</code></td>
+              <td>
+                以「对话 ID → 高亮数组」的形式保存：你主动选中的文本片段、颜色与样式、
+                备注、标签，以及该高亮所在的对话回合编号。不保存完整聊天记录。
+              </td>
+            </tr>
+            <tr>
+              <td>收藏的提示词</td>
+              <td><code>aiChatNavigatorPromptFavoritesV1</code></td>
+              <td>
+                以数组形式保存：你主动收藏的提示词文本、标题与标签。不保存对话上下文。
+              </td>
+            </tr>
+            <tr>
+              <td>重要标记</td>
+              <td><code>aiChatNavigatorImportantPromptsV1</code></td>
+              <td>
+                以「对话 ID → ID 数组」的形式保存：被你标记为「重要」的提示词的本地 ID。
+                不保存提示词内容本身。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>3. 权限说明</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>权限</th>
+              <th>用途</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>storage</code></td>
+              <td>用于在本地保存上述三类数据（高亮、收藏、重要标记）。</td>
+            </tr>
+            <tr>
+              <td><code>host_permissions: https://chatgpt.com/*</code></td>
+              <td>
+                仅在 ChatGPT 的网页内向页面注入侧边栏导航 UI，以读取对话结构并显示时间轴、
+                收藏与高亮。扩展不会在 chatgpt.com 之外的任何网站运行。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>4. 我们不会做的事</h2>
+      <ul>
+        <li>不会把你的提示词、聊天记录、搜索查询、附件或浏览数据上传到任何服务器。</li>
+        <li>不会进行云同步、不会创建账号、不会要求登录。</li>
+        <li>不会使用远程代码、不会从外部 URL 加载任何脚本。</li>
+        <li>不会将数据共享或出售给任何第三方。</li>
+      </ul>
+
+      <h2>5. 数据控制</h2>
+      <p>
+        你可以随时在扩展的「设置 / 数据管理」入口，或直接在浏览器的扩展管理页面中清除全部本地数据；
+        卸载扩展也会一并删除所有本地存储。由于数据从不离开你的浏览器，不存在需要我们从服务器删除的副本。
+      </p>
+
+      <h2>6. 联系我们</h2>
+      <p>
+        如果你对本隐私政策有任何疑问，请联系：<code>[在此填写你的联系邮箱，例如 privacy@example.com]</code>
+      </p>
+
+      <footer>
+        AI Chat Navigator · 本政策页面用于 Chrome Web Store 上架披露。
+      </footer>
+    </div>
+  </body>
+</html>

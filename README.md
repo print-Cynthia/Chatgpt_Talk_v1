@@ -2,6 +2,25 @@
 
 AI Chat Navigator is a lightweight Chrome extension that makes ChatGPT prompt navigation cleaner and easier.
 
+## Version 1.0.1
+
+Hotfix before Edge Add-ons submission: removed the internal "UI v66" development version badge that was still visible in the published UI.
+
+- Removed the version label from the timeline rail and the preview card.
+- Version bump: package `1.0.1`, UI label `UI v67`.
+- Rebuilt and repackaged `AI-Chat-Navigator-v1.0.1.zip` for store upload.
+
+## Version 1.0.0
+
+First release prepared for Microsoft Edge Add-ons publishing (Public, free). No new user-facing features beyond v0.7.42 - this is the store-readiness release:
+
+- Version bump: package `1.0.0`, UI label `UI v66`.
+- Manifest `description` shortened to <=132 characters to meet store upload validation: "Navigate, search, and organize ChatGPT chats. A local-only sidebar with timeline, favorites, markers, and AI highlights."
+- Removed the default WXT placeholder logo (`public/wxt.svg`) from the bundle.
+- Added `privacy.html` (repo root) - public privacy-policy page for the store disclosure (local-only storage, no uploads, permission rationale). Host via GitHub Pages.
+- Packaged `AI-Chat-Navigator-v1.0.0.zip` (built `chrome-mv3` output, manifest at zip root) for store upload.
+- Build convention unchanged: `npm run build:v1` -> `chrome-mv3_v1` (validation), then synced to `chrome-mv3` (load dir).
+
 ## Version 0.7.42
 
 Long-distance highlight jump - precision fix (the v0.7.41 'lands a bit too low, have to click once more' gap):

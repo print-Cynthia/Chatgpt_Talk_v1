@@ -11,7 +11,6 @@ import {
   importantMarkerStyle,
   finderToggleStyle,
   highlightsToggleStyle,
-  railVersionBadgeStyle,
 } from './styles';
 import { ListIcon, HighlightIcon } from './icons';
 
@@ -39,7 +38,6 @@ export interface TimelineRailProps {
   hoveredIndex: number;
   importantPromptIds: Set<string>;
   driftDetected: boolean;
-  uiVersion: string;
   nodeListRef: RefObject<HTMLOListElement | null>;
   isFinderOpen: boolean;
   isHighlightsOpen: boolean;
@@ -61,7 +59,6 @@ export function TimelineRail({
   hoveredIndex,
   importantPromptIds,
   driftDetected,
-  uiVersion,
   nodeListRef,
   isFinderOpen,
   isHighlightsOpen,
@@ -151,8 +148,6 @@ export function TimelineRail({
       >
         <ListIcon />
       </button>
-
-      <div style={railVersionBadgeStyle}>{uiVersion}</div>
 
       <button
         type="button"

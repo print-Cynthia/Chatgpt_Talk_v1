@@ -14,7 +14,7 @@ export default defineConfig({
   manifest: {
     name: 'AI Chat Navigator',
     description:
-      'Clean ChatGPT Prompt Timeline with hover preview, click-to-jump, and active dot navigation. Local-only, no cloud sync.',
+      'Navigate, search, and organize ChatGPT chats. A local-only sidebar with timeline, favorites, markers, and AI highlights.',
     permissions: ['storage'],
     host_permissions: ['https://chatgpt.com/*'],
   },

@@ -149,15 +149,6 @@ const previewActionsStyle: CSSProperties = {
   marginTop: '8px',
 };
 
-const previewVersionStyle: CSSProperties = {
-  marginLeft: 'auto',
-  alignSelf: 'center',
-  fontSize: '10px',
-  lineHeight: 1,
-  color: '#cbd5e1',
-  userSelect: 'none',
-};
-
 const previewActionButtonStyle: CSSProperties = {
   width: '24px',
   height: '24px',
@@ -642,17 +633,6 @@ const highlightsToggleStyle: CSSProperties = {
   bottom: '-84px',
 };
 
-const railVersionBadgeStyle: CSSProperties = {
-  position: 'absolute',
-  right: '14px',
-  bottom: '14px',
-  fontSize: '9px',
-  lineHeight: 1,
-  color: '#94a3b8',
-  userSelect: 'none',
-  pointerEvents: 'none',
-};
-
 const favoritesToggleBaseStyle: CSSProperties = {
   position: 'fixed',
   width: '40px',
@@ -1084,7 +1064,6 @@ export {
   attachmentRowStyle,
   attachmentChipStyle,
   previewActionsStyle,
-  previewVersionStyle,
   previewActionButtonStyle,
   finderToggleStyle,
   finderPanelStyle,
@@ -1131,7 +1110,6 @@ export {
   highlightCardStyle,
   highlightToastStyle,
   highlightsToggleStyle,
-  railVersionBadgeStyle,
   favoritesToggleBaseStyle,
   favoritesToggleActiveStyle,
   favoritesPanelBaseStyle,

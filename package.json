@@ -1,8 +1,8 @@
 {
   "name": "ai-chat-navigator",
-  "description": "AI Chat Navigator — a lightweight Chrome extension adding a floating Prompt Timeline, Prompt Finder, Important markers, local Favorites, and AI Response Highlight to ChatGPT (v0.7).",
+  "description": "AI Chat Navigator — a lightweight Chrome extension adding a prompt Timeline, Prompt Finder, Important markers, local Favorites, and inline AI Response Highlights to ChatGPT. Local-only, no cloud sync.",
   "private": true,
-  "version": "0.7.42",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "wxt",

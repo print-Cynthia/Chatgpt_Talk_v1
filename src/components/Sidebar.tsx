@@ -1756,7 +1756,6 @@ export function Sidebar() {
         hoveredIndex={hoveredIndex}
         importantPromptIds={importantPromptIds}
         driftDetected={driftDetected}
-        uiVersion={UI_VERSION_LABEL}
         nodeListRef={nodeListRef}
         isFinderOpen={isFinderOpen}
         isHighlightsOpen={isHighlightsOpen}
