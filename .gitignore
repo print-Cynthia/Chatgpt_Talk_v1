@@ -31,3 +31,6 @@ web-ext.config.ts
 
 # Build artifacts (distribute via GitHub Releases, not repo)
 AI-Chat-Navigator-*.zip
+
+# WorkBuddy local backups
+.workbuddy/backup/
