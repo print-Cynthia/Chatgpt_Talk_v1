@@ -385,6 +385,24 @@ function isProbablyAttachmentOrUiLine(line: string) {
   return false;
 }
 
+// ChatGPT injects accessibility labels like "You said:" / "你说：" at the
+// start of user turns. These labels are not part of the user's actual prompt
+// and should not appear in the timeline preview or favorite title.
+const USER_PROMPT_LABEL_TOKENS = ['你说：', 'You said:', 'You said'];
+
+function stripPromptAccessibilityLabel(text: string): string {
+  let result = text.trim();
+
+  for (const token of USER_PROMPT_LABEL_TOKENS) {
+    if (result.startsWith(token)) {
+      result = result.slice(token.length).trim();
+      break;
+    }
+  }
+
+  return result;
+}
+
 function normalizeText(rawText: string) {
   const cleanedRawText = removeZeroWidthChars(rawText);
   const rawLines = cleanedRawText
@@ -409,7 +427,7 @@ function normalizeText(rawText: string) {
     return '';
   }
 
-  return cleanedText;
+  return stripPromptAccessibilityLabel(cleanedText);
 }
 
 function hasRealPromptText(text: string) {

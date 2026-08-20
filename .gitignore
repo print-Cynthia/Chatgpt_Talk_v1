@@ -28,3 +28,6 @@ web-ext.config.ts
 *.njsproj
 *.sln
 *.sw?
+
+# Build artifacts (distribute via GitHub Releases, not repo)
+AI-Chat-Navigator-*.zip
