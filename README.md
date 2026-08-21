@@ -2,6 +2,15 @@
 
 AI Chat Navigator is a lightweight Chrome extension that makes ChatGPT prompt navigation cleaner and easier.
 
+## Version 1.0.3
+
+Replaced the extension icon across all sizes with the new project logo (2048x2048 source).
+
+- Regenerated `public/icon/` at 16/32/48/96/128 px from the high-res logo (center-cropped to square, LANCZOS downscale).
+- Version bump: package `1.0.3`, UI label `UI v69`.
+- Rebuilt, synced to `chrome-mv3`, and repackaged `AI-Chat-Navigator-v1.0.3.zip` for store upload.
+- Note: the store listing's promotional icon is uploaded separately in the store dashboard; the in-package icon is now the new logo.
+
 ## Version 1.0.2
 
 Bug fix before Edge Add-ons submission: removed the "You said:" / "你说：" accessibility label that ChatGPT injects at the start of user turns from the saved favorite title.
