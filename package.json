@@ -1,8 +1,8 @@
 {
   "name": "ai-chat-navigator",
-  "description": "AI Chat Navigator — a lightweight Chrome extension adding a prompt Timeline, Prompt Finder, Important markers, local Favorites, and inline AI Response Highlights to ChatGPT. Local-only, no cloud sync.",
+  "description": "Navvi — AI Multi‑Agent Chat Navigator is a lightweight extension for ChatGPT that adds a prompt Timeline, Prompt Finder, Important markers, local Favorites, and inline AI Response Highlights. Local-only, no cloud sync.",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "scripts": {
     "dev": "wxt",

@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           title="点击关闭"
         >
           <div style={{ fontWeight: 700, marginBottom: '4px' }}>
-            AI Chat Navigator 渲染出错
+            Navvi 渲染出错
           </div>
           <div style={{ opacity: 0.92, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {error.message || String(error)}

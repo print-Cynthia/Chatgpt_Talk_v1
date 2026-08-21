@@ -1,6 +1,16 @@
-# AI Chat Navigator
+# Navvi — AI Multi‑Agent Chat Navigator
 
-AI Chat Navigator is a lightweight Chrome extension that makes ChatGPT prompt navigation cleaner and easier.
+Navvi is a lightweight extension for ChatGPT that makes prompt navigation cleaner and easier.
+
+## Version 1.0.4
+
+Renamed the extension to **Navvi — AI Multi‑Agent Chat Navigator**.
+
+- Updated the public name in the manifest (`wxt.config.ts`, `wxt.v1.config.ts`), popup title/header, `privacy.html`, `README.md`, `EDGE-PUBLISH.md`, and the QA checklist.
+- Internal code log tags (`[AI Chat Navigator]`) intentionally left unchanged — they are developer-only identifiers, not user-facing.
+- Version bump: package `1.0.4`, UI label `UI v70`.
+- Rebuilt, synced to `chrome-mv3`, and repackaged `AI-Chat-Navigator-v1.0.4.zip` for store upload.
+- Note: the in-package icon is still the previous logo, pending a new source image from the user; this release changes only the name.
 
 ## Version 1.0.3
 

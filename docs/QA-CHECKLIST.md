@@ -1,4 +1,4 @@
-# AI Chat Navigator — QA 测试清单（v0.6 稳定性基线）
+# Navvi — QA 测试清单（v0.6 稳定性基线）
 
 用途：每次 ChatGPT 改版、或本插件改完代码后，按此清单手工回归，确认 7 大类功能正常。
 环境：最新版 ChatGPT web 端（https://chatgpt.com/c/... 长对话）。

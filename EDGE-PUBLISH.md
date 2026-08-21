@@ -1,4 +1,4 @@
-# 上架 Microsoft Edge Add-ons 指南（AI Chat Navigator v1.0.0）
+# 上架 Microsoft Edge Add-ons 指南（Navvi v1.0.0）
 
 > 目标：把扩展发布到 Edge 扩展商店（免费，无需 $5）。
 > 本商店与 Chrome 同为 Chromium / Manifest V3，当前构建产物 `AI-Chat-Navigator-v1.0.0.zip` 可直接上传，无需改代码或重建。
@@ -16,7 +16,7 @@
 
 1. 打开 [Microsoft Edge Add-ons 开发人员仪表板](https://partner.microsoft.com/dashboard/microsoftedge/overview)。
 2. 首次进入按向导建好开发者/发布者档案（免费，无需税号除非你要收款；本扩展免费，可略过付款设置）。
-3. 点 **“新建项” / Create new item**，填写扩展名称 `AI Chat Navigator`（商店内需唯一，若提示冲突可加副标题如 `AI Chat Navigator for ChatGPT`）。
+3. 点 **"新建项" / Create new item**，填写扩展名称 `Navvi — AI Multi‑Agent Chat Navigator`（商店内需唯一，若提示冲突可加副标题如 `Navvi for ChatGPT`）。
 4. **上传包**：选择仓库根的 `AI-Chat-Navigator-v1.0.0.zip`（manifest 在 zip 根，Edge 会自动读取）。
 5. **列表信息**：
    - 简述（Short description，≤ 132 字符）：
